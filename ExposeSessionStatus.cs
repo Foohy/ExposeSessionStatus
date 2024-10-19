@@ -11,8 +11,6 @@ namespace ExposeSessionStatus
 {
     public class SessionExposer : ResoniteMod
     {
-        private const string DataHandlerUrl = "http://localhost:9393/ingest/";
-
         private static readonly HttpClient SharedClient = new HttpClient();
 
         public override string Name => "ExposeSessionStatus";
@@ -21,11 +19,22 @@ namespace ExposeSessionStatus
 
         public override string Version => "0.0.3";
 
+        [AutoRegisterConfigKey]
+        private static readonly ModConfigurationKey<string> DataHandlerUrl = new ModConfigurationKey<string>("url", "Data Handler URL", computeDefault: () => "localhost:9393", internalAccessOnly: true);
+
+        [AutoRegisterConfigKey]
+        private static readonly ModConfigurationKey<int> UpdateInterval = new ModConfigurationKey<int>("update_interval", "Update Interval (sec)", computeDefault: () => 5, internalAccessOnly: true);
+
+        private static ModConfiguration Config;
+
         public override void OnEngineInit()
         {
+            Config = GetConfiguration();
+            Config.Save(true);
+
             Engine.Current.RunPostInit(() =>
             {
-                Timer timer = new Timer(5000.0);
+                Timer timer = new Timer(Config.GetValue(UpdateInterval) * 1000);
                 timer.Elapsed += WorldsChangedListener;
                 timer.AutoReset = true;
                 timer.Enabled = true;
@@ -62,11 +71,12 @@ namespace ExposeSessionStatus
                 if (dictionary.Count == 0)
                     return;
                 var content = JsonConvert.SerializeObject(dictionary);
-                await SharedClient.PostAsync(DataHandlerUrl + Engine.Current.Cloud.Session.CurrentUsername, new StringContent(content));
+                string Url = String.Format("http://{0}/ingest/{1}", Config.GetValue(DataHandlerUrl), Engine.Current.Cloud.Session.CurrentUsername);
+                await SharedClient.PostAsync(Url, new StringContent(content));
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[ExposeSessionStatus] Failed to send session status: " + ex.Message + ex.StackTrace);
+                Warn("[ExposeSessionStatus] Failed to send session status: " + ex.Message + ex.StackTrace);
             }
         }
     }
